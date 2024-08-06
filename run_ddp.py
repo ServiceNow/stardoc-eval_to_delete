@@ -24,7 +24,7 @@ def parse_args():
     parser.add_argument('--pack', action='store_true')
     parser.add_argument('--use-subtitle', action='store_true')
     # Work Dir
-    parser.add_argument('--work-dir', type=str, default='.', help='select the output directory')
+    parser.add_argument('--output-dir', type=str, default='./outputs/', help='select the output directory')
     # Infer + Eval or Infer Only
     parser.add_argument('--mode', type=str, default='all', choices=['all', 'infer'])
     # API Kwargs, Apply to API VLMs and Judge API LLMs
@@ -131,7 +131,7 @@ def run_model_on_benchmark(process_rank, args, model, model_name, sample_size, b
     # logger = kwargs["logger"]
     
 
-    pred_root = osp.join(args.work_dir, model_name)
+    pred_root = osp.join(args.output_dir, model_name)
 
     os.makedirs(pred_root, exist_ok=True)
     print(benchmark_list)

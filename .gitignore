@@ -158,3 +158,4 @@ images/
 scripts/*ttf
 cache_dir/*
 outputs/
+.vscode/
