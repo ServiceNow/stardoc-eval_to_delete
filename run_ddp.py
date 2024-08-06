@@ -327,6 +327,7 @@ def main():
     
     sample_size = args.sample_size
     # todo problematic benchmarks with subsampling: ['MME', 'VCR_EN_EASY_100']
+    problematic_models = []
     
     for _, model_name in enumerate(args.model):
         model = None
@@ -348,20 +349,29 @@ def main():
             "logger": logger
         }
 
-        start = datetime.datetime.now()
+        try:
+            start = datetime.datetime.now()
 
-        # Spawn processes, each running the `run_on_gpu` function
-        tmp.spawn(
-            run_on_gpu,           # Target function to run in parallel
-            args=(world_size, benchmark_chunks, kwargs),  # Arguments for the target function
-            nprocs=world_size,    # Number of processes to spawn (one per GPU)
-            join=True             # Wait for all processes to complete
-        )
+            # Spawn processes, each running the `run_on_gpu` function
+            tmp.spawn(
+                run_on_gpu,           # Target function to run in parallel
+                args=(world_size, benchmark_chunks, kwargs),  # Arguments for the target function
+                nprocs=world_size,    # Number of processes to spawn (one per GPU)
+                join=True             # Wait for all processes to complete
+            )
 
-        end = datetime.datetime.now()
+            end = datetime.datetime.now()
 
-        print(f'Process took {(end - start).total_seconds()} seconds ({(end - start).total_seconds() // 3600} hours and {((end - start).total_seconds() % 3600) // 60} minutes) with {world_size} number of GPUS!')
-        logger.info(f'Process took {(end - start).total_seconds()} seconds ({(end - start).total_seconds() // 3600} hours and {((end - start).total_seconds() % 3600) // 60} minutes) with {world_size} number of GPUS!')
+            print(f'Process took {(end - start).total_seconds()} seconds ({(end - start).total_seconds() // 3600} hours and {((end - start).total_seconds() % 3600) // 60} minutes) with {world_size} number of GPUS!')
+            logger.info(f'Process took {(end - start).total_seconds()} seconds ({(end - start).total_seconds() // 3600} hours and {((end - start).total_seconds() % 3600) // 60} minutes) with {world_size} number of GPUS!')
+    
+        except Exception as e:
+            problematic_models.append(model_name)
+            print(e)
+            continue
+        
+    print(f'We had {len(problematic_models)} problematic models:')
+    print(problematic_models)
 
 
 
