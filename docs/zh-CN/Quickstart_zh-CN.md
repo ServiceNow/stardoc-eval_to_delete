@@ -57,7 +57,7 @@ pip install -e .
 - `--model (list[str])`: 设置在 VLMEvalKit 中支持的 VLM 名称（在 `vlmeval/config.py` 中的 `supported_VLM` 中定义）
 - `--mode (str, 默认值为 'all', 可选值为 ['all', 'infer'])`：当 mode 设置为 "all" 时，将执行推理和评估；当设置为 "infer" 时，只执行推理
 - `--nproc (int, 默认值为 4)`: 调用 API 的线程数
-- `--work-dir (str, default to '.')`: 存放测试结果的目录
+- `--output-dir (str, default to '.')`: 存放测试结果的目录
 - `--nframe (int, default to 8)`: 从视频中采样的帧数，仅对视频多模态评测集适用
 - `--pack (bool, store_true)`: 一个视频可能关联多个问题，如 `pack==True`，将会在一次询问中提问所有问题
 

@@ -8,6 +8,8 @@ from vlmeval.inference_video import infer_data_job_video
 from vlmeval.inference_mt import infer_data_job_mt
 from vlmeval.smp import *
 from vlmeval.utils.result_transfer import MMMU_result_transfer, MMTBench_result_transfer
+import random
+from transformers import set_seed
 
 
 def parse_args():
@@ -20,7 +22,7 @@ def parse_args():
     parser.add_argument('--pack', action='store_true')
     parser.add_argument('--use-subtitle', action='store_true')
     # Work Dir
-    parser.add_argument('--work-dir', type=str, default='.', help='select the output directory')
+    parser.add_argument('--output_dir', type=str, default='./outputs/', help='select the output directory')
     # Infer + Eval or Infer Only
     parser.add_argument('--mode', type=str, default='all', choices=['all', 'infer'])
     # API Kwargs, Apply to API VLMs and Judge API LLMs
@@ -30,19 +32,62 @@ def parse_args():
     parser.add_argument('--judge', type=str, default=None)
     # Logging Utils
     parser.add_argument('--verbose', action='store_true')
+    # Using a [the first (or) random] sample_size out of each benchmark if needed
+    parser.add_argument('--sample_size', type=int, default=-1, help='Number of samples of each benchmark to use. Default is -1, using all of the samples from each benchmark.')
+    parser.add_argument('--random', default=False, action='store_true', help='If set to "true", will use a random subset of size "--sample_size" out of each benchmark, else will use the first "--sample_size" samples instead.')
+    parser.add_argument('--seed', type=int, default=42, help='Seed for reproducable random selection of samples out of benchmarks')
     # Configuration for Resume
     # Ignore: will not rerun failed VLM inference
     parser.add_argument('--ignore', action='store_true', help='Ignore failed indices. ')
     # Rerun: will remove all evaluation temp files
     parser.add_argument('--rerun', action='store_true')
     args = parser.parse_args()
+
     return args
 
+def seed_everything(seed):
 
+    # Set seed for torch
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if you are using multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    # Set seed for numpy
+    np.random.seed(seed)
+
+    # Set seed for random
+    random.seed(seed)
+
+    # Set seed for transformers
+    set_seed(seed)
+
+def sample_dataset(dataset, sample_size, is_random):
+    dataframe = dataset.data
+    dataset_name = dataset.dataset_name
+    print(f'Sampling {sample_size} samples from {dataset_name}')
+    if dataset_name.lower() == 'mme':
+        # choose the (sample_size / 14) first rows out of each category
+        if sample_size % 14 != 0:
+            raise Exception('MME has 14 categories, so the sample size should be divisible by 14.')
+        sub_sample_size = sample_size / 14
+        to_return = dataframe.groupby('category').head(sub_sample_size)
+    else:
+        if is_random:
+            indices = np.random.choice(np.arange(0, len(dataframe)), size=sample_size, replace=False)
+            to_return = dataframe.iloc[indices]
+        else:
+            to_return = dataframe.iloc[:sample_size]
+    
+    assert len(to_return) == sample_size
+    return to_return
+ 
 def main():
     logger = get_logger('RUN')
 
     args = parse_args()
+    seed_everything(args.seed)
     assert len(args.data), '--data should be a list of data files'
 
     if args.retry is not None:
@@ -59,14 +104,23 @@ def main():
         local_rank = os.environ.get('LOCAL_RANK', 0)
         torch.cuda.set_device(int(local_rank))
         dist.init_process_group(backend='nccl', timeout=datetime.timedelta(seconds=10800))
+    
+    sample_size = args.sample_size
+    # todo problematic benchmarks with subsampling: ['MME', 'VCR_EN_EASY_100']
 
     for _, model_name in enumerate(args.model):
         model = None
 
-        pred_root = osp.join(args.work_dir, model_name)
+        pred_root = osp.join(args.output_dir, model_name)
         os.makedirs(pred_root, exist_ok=True)
 
         for _, dataset_name in enumerate(args.data):
+            if dataset_name.lower != 'mme':
+                is_random = args.random
+            else:
+                is_random = False
+
+            print(f'Processing {dataset_name}')
             dataset_kwargs = {}
             if dataset_name == 'MMLongBench_DOC':
                 dataset_kwargs['model'] = model_name
@@ -87,6 +141,9 @@ def main():
             if dataset is None:
                 logger.error(f'Dataset {dataset_name} is not valid, will be skipped. ')
                 continue
+            
+            if sample_size != -1:
+                dataset.data = sample_dataset(dataset, sample_size, is_random)
 
             result_file = f'{pred_root}/{model_name}_{dataset_name}.xlsx'
             if dataset_name in ['MMBench-Video']:
@@ -103,9 +160,21 @@ def main():
             if dataset.TYPE == 'MT':
                 result_file = result_file.replace('.xlsx', '.tsv')
 
+            if sample_size != -1:
+                if is_random:
+                    result_file = result_file.replace(f'{dataset_name}', f'{dataset_name}_sampleSize{sample_size}_randomSeed{args.seed}')
+                else:
+                    result_file = result_file.replace(f'{dataset_name}', f'{dataset_name}_sampleSize{sample_size}')
+
             if osp.exists(result_file) and args.rerun:
                 for keyword in ['openai', 'gpt', 'auxmatch']:
-                    os.system(f'rm {pred_root}/{model_name}_{dataset_name}_{keyword}*')
+                    if sample_size != -1:
+                        if is_random:
+                            os.system(f'rm {pred_root}/{model_name}_{dataset_name}_sampleSize{sample_size}_randomSeed{args.seed}_{keyword}*')
+                        else:
+                            os.system(f'rm {pred_root}/{model_name}_{dataset_name}_sampleSize{sample_size}_{keyword}*')
+                    else:    
+                        os.system(f'rm {pred_root}/{model_name}_{dataset_name}_{keyword}*')
 
             if model is None:
                 model = model_name  # which is only a name
@@ -130,7 +199,9 @@ def main():
                     dataset=dataset,
                     verbose=args.verbose,
                     api_nproc=args.nproc,
-                    ignore_failed=args.ignore)
+                    ignore_failed=args.ignore,
+                    sample_size=sample_size,
+                    random_seed=args.seed if is_random else None)
             else:
                 model = infer_data_job(
                     model,
@@ -139,7 +210,9 @@ def main():
                     dataset=dataset,
                     verbose=args.verbose,
                     api_nproc=args.nproc,
-                    ignore_failed=args.ignore)
+                    ignore_failed=args.ignore,
+                    sample_size=sample_size,
+                    random_seed=args.seed if is_random else None)
 
             # Set the judge kwargs first before evaluation or dumping
             judge_kwargs = {
@@ -215,7 +288,12 @@ def main():
                 if eval_proxy is not None:
                     proxy_set(old_proxy)
 
-
 if __name__ == '__main__':
     load_env()
+    from datetime import datetime
+
+    start = datetime.now()
     main()
+    end = datetime.now()
+    print(f'Process took {(end - start).total_seconds()} seconds ({(end - start).total_seconds() // 3600} hours and {((end - start).total_seconds() % 3600) // 60} minutes) with run.py!')
+    

@@ -58,7 +58,7 @@ We use `run.py` for evaluation. To use the script, you can use `$VLMEvalKit/run.
 - `--model (list[str])`: Set the VLM names that are supported in VLMEvalKit (defined in `supported_VLM` in `vlmeval/config.py`).
 - `--mode (str, default to 'all', choices are ['all', 'infer'])`: When `mode` set to "all", will perform both inference and evaluation; when set to "infer", will only perform the inference.
 - `--nproc (int, default to 4)`: The number of threads for OpenAI API calling.
-- `--work-dir (str, default to '.')`: The directory to save evaluation results.
+- `--output-dir (str, default to './outputs/')`: The directory to save evaluation results.
 - `--nframe (int, default to 8)`: The number of frames to sample from a video, only applicable to the evaluation of video benchmarks.
 - `--pack (bool, store_true)`: A video may associate with multiple questions, if `pack==True`, will ask all questions for a video in a single query.
 

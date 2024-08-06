@@ -129,12 +129,25 @@ def infer_data(model_name, work_dir, dataset, out_file, verbose=False, api_nproc
 
 
 # A wrapper for infer_data, do the pre & post processing
-def infer_data_job(model, work_dir, model_name, dataset, verbose=False, api_nproc=4, ignore_failed=False):
+def infer_data_job(model, work_dir, model_name, dataset, verbose=False, api_nproc=4, ignore_failed=False, sample_size=-1, random_seed=None):
     rank, world_size = get_rank_and_world_size()
     dataset_name = dataset.dataset_name
     result_file = osp.join(work_dir, f'{model_name}_{dataset_name}.xlsx')
 
     prev_file = f'{work_dir}/{model_name}_{dataset_name}_PREV.pkl'
+
+    tmpl = osp.join(work_dir, '{}' + f'{world_size}_{dataset_name}.pkl')
+    if sample_size != -1:
+        if random_seed is None:
+            result_file = result_file.replace(f'{dataset_name}', f'{dataset_name}_sampleSize{sample_size}')
+            prev_file = prev_file.replace(f'{dataset_name}', f'{dataset_name}_sampleSize{sample_size}')
+            tmpl = tmpl.replace(f'{dataset_name}', f'{dataset_name}_sampleSize{sample_size}')
+        else:
+            result_file = result_file.replace(f'{dataset_name}', f'{dataset_name}_sampleSize{sample_size}_randomSeed{random_seed}')
+            prev_file = prev_file.replace(f'{dataset_name}', f'{dataset_name}_sampleSize{sample_size}_randomSeed{random_seed}')
+            tmpl = tmpl.replace(f'{dataset_name}', f'{dataset_name}_sampleSize{sample_size}_randomSeed{random_seed}')
+
+
     if osp.exists(result_file):
         if rank == 0:
             data = load(result_file)
@@ -145,7 +158,6 @@ def infer_data_job(model, work_dir, model_name, dataset, verbose=False, api_npro
         if world_size > 1:
             dist.barrier()
 
-    tmpl = osp.join(work_dir, '{}' + f'{world_size}_{dataset_name}.pkl')
     out_file = tmpl.format(rank)
 
     model = infer_data(
