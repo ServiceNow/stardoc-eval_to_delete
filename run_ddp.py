@@ -333,9 +333,6 @@ def main():
 
         world_size = torch.cuda.device_count()  # Number of available GPUs
 
-        print('\n\n***** SETTING WORLD_SIZE TO 1 MANUALLY ******* \n\n')
-        world_size = 1
-
         if world_size == 0:
             raise ValueError("No GPUs available. Check your CUDA installation and GPU setup.")
 
